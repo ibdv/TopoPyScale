@@ -117,12 +117,12 @@ class Topoclass(object):
         else:
             print('\n---> DEM file found')
 
-        if self.config.project.extent is not None:
-            extent_NSWE = self.config.project.extent
-            self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], extent_NSWE))
-        else:
-            # little routine extracting lat/lon extent from DEM
-            self.config.project.extent = tp.get_extent_latlon(self.config.dem.filepath, self.config.dem.epsg)
+            if self.config.project.extent is not None:
+                extent_NSWE = self.config.project.extent
+                self.config.project.extent = dict(zip(['latN', 'latS', 'lonW', 'lonE'], extent_NSWE))
+            else:
+                # little routine extracting lat/lon extent from DEM
+                self.config.project.extent = tp.get_extent_latlon(self.config.dem.filepath, self.config.dem.epsg)
 
         print(self.config.project.extent)
         print('Project lat/lon extent:\n')
@@ -172,6 +172,9 @@ class Topoclass(object):
             self.toposub.ds_param = xr.open_dataset(
                 self.config.outputs.path / self.config.outputs.file.ds_param)
             print(f'---> DEM parameter file {self.config.outputs.file.ds_param} exists and loaded')
+
+            self.plot.ds_param = self.toposub.ds_param
+
         else:
             print(f'-> WARNING: DEM parameter file {self.config.outputs.file.ds_param} not found')
 
@@ -198,6 +201,7 @@ class Topoclass(object):
                 combine='nested',
                 parallel=True)
             print(f'---> Downscaled point files {self.config.outputs.file.ds_param} exists and loaded')
+            self.plot.ds_down = self.downscaled_pts
         else:
             print(f'-> WARNING: Downscale point files {self.config.outputs.file.downscaled_pt} not found')
 
@@ -363,6 +367,8 @@ class Topoclass(object):
             n_clusters = int(np.ceil(self.config.sampling.toposub.n_clusters * relative_cover))
 
             df_scaled, scaler = ts.scale_df(df_subset, features=self.config.sampling.toposub.clustering_features)
+            print('finished scaling')
+
             if self.config.sampling.toposub.clustering_method.lower() == 'kmean':
                 df_centroids, _, cluster_labels = ts.kmeans_clustering(
                     df_scaled,
@@ -428,7 +434,8 @@ class Topoclass(object):
         fname = self.config.outputs.path / self.config.outputs.file.ds_param
         te.to_netcdf(self.toposub.ds_param, fname=fname)
 
-        # update plotting class variable
+        # update plotting class variable 
+        #DONE; THIS IS REQUIRED FOR PLOTTING; BUT DOESNT HAPPEN IF ds_param.nc ALREADY EXISTED
         self.plot.ds_param = self.toposub.ds_param
 
     def extract_topo_param(self):
@@ -438,6 +445,12 @@ class Topoclass(object):
         if (self.config.outputs.path / self.config.outputs.file.df_centroids).is_file():
             self.toposub.df_centroids = pd.read_pickle(
                 self.config.outputs.path / self.config.outputs.file.df_centroids)
+
+            self.toposub.ds_param = xr.open_dataset(
+                self.config.outputs.path / self.config.outputs.file.ds_param)
+
+            self.plot.ds_param = self.toposub.ds_param
+
             print(f'---> Centroids file {self.config.outputs.file.df_centroids} exists and loaded')
         else:
             if self.config.sampling.method.lower() in ['points', 'point']:
@@ -668,7 +681,7 @@ class Topoclass(object):
             realtime = False
 
         if realtime:  # make sure end date is correct
-            lastdate = fe.return_last_fullday()
+            lastdate = return_last_fullday()
             # 5th day will always be incomplete so we got to last fullday
             self.config.project.end = self.config.project.end.replace(year=lastdate.year, month=lastdate.month,
                                                                       day=lastdate.day)
@@ -695,18 +708,19 @@ class Topoclass(object):
             realtime=realtime
         )
         # retrieve era5 plevels
-        fe.retrieve_era5(
-            self.config.climate[self.config.project.climate].product,
-            self.config.project.start,
-            self.config.project.end,
-            self.config.climate.path,
-            latN, latS, lonE, lonW,
-            self.config.climate[self.config.project.climate].timestep,
-            self.config.climate[self.config.project.climate].download_threads,
-            surf_plev='plev',
-            plevels=self.config.climate[self.config.project.climate].plevels,
-            realtime=realtime
-        )
+        if len(self.config.climate[self.config.project.climate].plevels) > 0:
+            fe.retrieve_era5(
+                self.config.climate[self.config.project.climate].product,
+                self.config.project.start,
+                self.config.project.end,
+                self.config.climate.path,
+                latN, latS, lonE, lonW,
+                self.config.climate[self.config.project.climate].timestep,
+                self.config.climate[self.config.project.climate].download_threads,
+                surf_plev='plev',
+                plevels=self.config.climate[self.config.project.climate].plevels,
+                realtime=realtime
+            )
 
     def get_ifs_forecast(self):
         # run openData script here
@@ -882,6 +896,29 @@ class Plotting:
                         hillshade=hillshade,
                         **kwargs
                         )
+
+    def save_var_grid(self, var='t', time=None, time_step=0):
+        grid_dir = './grids/'
+
+        print('---> Saving data as grid')
+        if time is None and time_step is not None:
+            ds = self.ds_down.isel(time=time_step)
+        elif time is not None and time_step is None:
+            ds = self.ds_down.sel(time=time)
+        elif type(self.ds_down) is xr.DataArray:
+            ds = self.ds_down.to_dataset()
+        else:
+            ds = self.ds_down
+
+        # Check if the directory already exists
+        if not os.path.exists(grid_dir):
+            # Create the directory
+            os.makedirs(grid_dir)
+            
+        #te.to_netcdf(ds[var].sel(point_name=self.ds_param.point_name), fname= './grids/' + var + '_' + str(time_step) + '.nc')
+        ds[var].sel(point_name=self.ds_param.point_name).to_netcdf('./grids/'+ var + '_' + str(time_step) + '.nc', engine='h5netcdf')
+
+
 
     def map_center_clusters(self,
                             background_var='elevation',

@@ -51,18 +51,33 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 							 '18:00', '19:00', '20:00',
 							 '21:00', '22:00', '23:00'],
 					'3H': ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
-					'6H': ['00:00', '06:00', '12:00', '18:00']}
+					'6H': ['00:00', '06:00', '12:00', '18:00'],
+					'1M': ['00:00'],
+					'1MS': ['00:00']}
+	
+	surf_dataset_dict = {'1H': 'reanalysis-era5-single-levels',
+				 '3H': 'reanalysis-era5-single-levels',
+				 '6H': 'reanalysis-era5-single-levels',
+				 '1M': 'reanalysis-era5-single-levels-monthly-means',
+				 '1MS': 'reanalysis-era5-single-levels-monthly-means'}
+	
+	plev_dataset_dict = {'1H': 'reanalysis-era5-pressure-levels',
+				 '3H': 'reanalysis-era5-pressure-levels',
+				 '6H': 'reanalysis-era5-pressure-levels',
+				 '1M': 'reanalysis-era5-pressure-levels-monthly-means',
+				 '1MS': 'reanalysis-era5-pressure-levels-monthly-means'}
 
 	df = pd.DataFrame()
 	# date_range will make sure to include the month of the latest date (endDate) provided
 	df['dates'] = pd.date_range(startDate, pd.Timestamp(endDate)-pd.offsets.Day()+pd.offsets.MonthEnd(), freq='M', inclusive='both')
 	df['month'] = df.dates.dt.month
 	df['year'] = df.dates.dt.year
+	df['step'] = step
 	if surf_plev == 'surf':
-		df['dataset'] = 'reanalysis-era5-single-levels'
+		df['dataset'] = df.step.apply(lambda x: surf_dataset_dict.get(x))
 		df['target_file'] = df.dates.apply(lambda x: eraDir + "SURF_%04d%02d.nc" % (x.year, x.month))
 	elif surf_plev == 'plev':
-		df['dataset'] = 'reanalysis-era5-pressure-levels'
+		df['dataset'] = df.step.apply(lambda x: plev_dataset_dict.get(x))
 		df['target_file'] = df.dates.apply(lambda x: eraDir + "PLEV_%04d%02d.nc" % (x.year, x.month))
 		loc_list = []
 		loc_list.extend([plevels]*df.shape[0])
@@ -71,7 +86,6 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 		sys.exit('ERROR: surf_plev can only be surf or plev')
 	df['file_exist'] = 0
 	df.file_exist = df.target_file.apply(lambda x: os.path.isfile(x)*1)
-	df['step'] = step
 	df['time_steps'] = df.step.apply(lambda x: time_step_dict.get(x))
 	df['bbox'] = df.step.apply(lambda x: bbox)
 	df['product_type'] = product
@@ -99,7 +113,8 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 												list(download.bbox),
 												list(download.target_file),
 												list(download.product_type),
-												list(download.time_steps)))
+												list(download.time_steps),
+												list(download.step)))
 			pool.close()
 			pool.join()
 		elif surf_plev == 'plev':
@@ -128,7 +143,7 @@ def retrieve_era5(product, startDate, endDate, eraDir, latN, latS, lonE, lonW, s
 			# redownload current month to catch missing days in realtime mode.
 			era5_realtime_plev(eraDir, df.dataset[0], df.bbox[0], df.product_type[0], df.plevels[0])
 
-def era5_request_surf(dataset, year, month, bbox, target, product, time):
+def era5_request_surf(dataset, year, month, bbox, target, product, time, step):
 	"""CDS surface api call
 
 	Args:
@@ -145,34 +160,52 @@ def era5_request_surf(dataset, year, month, bbox, target, product, time):
 
 	"""
 	c = cdsapi.Client()
-	c.retrieve(
-		dataset,
-		{'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
-					  'surface_solar_radiation_downwards','surface_pressure',
-					  'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
-					  'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
-					  ],
-		 'product_type': product,
-		 "area": bbox,
-		 'year': year,
-		 'month': '%02d'%(month),
-		 'day': ['01', '02', '03',
-				 '04', '05', '06',
-				 '07', '08', '09',
-				 '10', '11', '12',
-				 '13', '14', '15',
-				 '16', '17', '18',
-				 '19', '20', '21',
-				 '22', '23', '24',
-				 '25', '26', '27',
-				 '28', '29', '30',
-				 '31'
-				 ],
-		 'time': time,
-		 'grid': [0.25, 0.25],
-		 'format': 'netcdf'
-		 },
-		target)
+	if step == '1M' or step == '1MS':
+		c.retrieve(
+			dataset,
+			{'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
+						'surface_solar_radiation_downwards','surface_pressure',
+						'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
+						'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
+						],
+			'product_type': product,
+			"area": bbox,
+			'year': year,
+			'month': '%02d'%(month),
+			'time': time,
+			'grid': [0.25, 0.25],
+			'format': 'netcdf'
+			},
+			target)
+	else:
+		c.retrieve(
+			dataset,
+			{'variable': ['geopotential', '2m_dewpoint_temperature', 'surface_thermal_radiation_downwards',
+						'surface_solar_radiation_downwards','surface_pressure',
+						'Total precipitation', '2m_temperature', 'TOA incident solar radiation',
+						'friction_velocity', 'instantaneous_moisture_flux', 'instantaneous_surface_sensible_heat_flux'
+						],
+			'product_type': product,
+			"area": bbox,
+			'year': year,
+			'month': '%02d'%(month),
+			'day': ['01', '02', '03',
+					'04', '05', '06',
+					'07', '08', '09',
+					'10', '11', '12',
+					'13', '14', '15',
+					'16', '17', '18',
+					'19', '20', '21',
+					'22', '23', '24',
+					'25', '26', '27',
+					'28', '29', '30',
+					'31'
+					],
+			'time': time,
+			'grid': [0.25, 0.25],
+			'format': 'netcdf'
+			},
+			target)
 	print(target + " complete")
 
 def era5_request_plev(dataset, year, month, bbox, target, product, time, plevels):

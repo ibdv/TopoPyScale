@@ -94,6 +94,7 @@ def map_variable(ds_down,
                              dx=ds_param.x.diff('x')[0].values,
                              dy=ds_param.y.diff('y')[0].values,
                              fraction=1.0)
+
         ax.imshow(shade,
                    extent=[ds_param.x.min(), ds_param.x.max(), ds_param.y.min(), ds_param.y.max()],
                    cmap=plt.cm.gray)
@@ -101,8 +102,8 @@ def map_variable(ds_down,
 
     if len(list(ds.keys()))==1:
         var = list(ds.keys())[0]
+    # convert downscaled data to grid and show
     ds[var].sel(point_name=ds_param.point_name).plot.imshow(alpha=alpha, cmap=cmap, **kwargs)
-
 
     return ax
 

@@ -122,7 +122,8 @@ def pt_downscale_interp(row, ds_plev_pt, ds_surf_pt, meta):
 
     if (row.elevation < plev_interp.z.isel(level=-1)).sum():
         pt_elev_diff = np.round(np.min(row.elevation - plev_interp.z.isel(level=-1).values), 0)
-        raise Warning(f"---> WARNING: Point {pt_id} is {pt_elev_diff} m lower than the {plev_interp.isel(level=-1).level.data} hPa geopotential\n=> "
+        #raise Warning
+        print(f"---> WARNING: Point {pt_id} is {pt_elev_diff} m lower than the {plev_interp.isel(level=-1).level.data} hPa geopotential\n=> "
                   "Values sampled from Psurf and lowest Plevel. No vertical interpolation")
         
         ind_z_top = (plev_interp.where(plev_interp.z > row.elevation).z - row.elevation).argmin('level')
@@ -277,7 +278,8 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     # scale direct solar radiation using Beer's law (see Aalstad 2019, Appendix A)
     ka = surf_interp.ssrd * 0
     # pdb.set_trace()
-    ka[~sunset] = (g * mu0[~sunset] / down_pt.p) * np.log(SWtoa[~sunset] / surf_interp.SW_direct[~sunset])
+    if ka[~sunset].size != 0:
+        ka[~sunset] = (g * mu0[~sunset] / down_pt.p) * np.log(SWtoa[~sunset] / surf_interp.SW_direct[~sunset])
     # Illumination angle
     down_pt['cos_illumination_tmp'] = mu0 * np.cos(row.slope) + np.sin(ds_solar.zenith) * \
                                       np.sin(row.slope) * np.cos(ds_solar.azimuth - row.aspect)
@@ -292,10 +294,12 @@ def pt_downscale_radiations(row, ds_solar, horizon_da, meta, output_dir):
     horizon = horizon_da.sel(x=row.x, y=row.y, azimuth=np.rad2deg(ds_solar.azimuth), method='nearest')
     shade = (horizon > ds_solar.elevation)
     down_pt['SW_direct_tmp'] = down_pt.t * 0
-    down_pt['SW_direct_tmp'][~sunset] = SWtoa[~sunset] * np.exp(
-        -ka[~sunset] * down_pt.p[~sunset] / (g * mu0[~sunset]))
+    if ka[~sunset].size != 0:
+        down_pt['SW_direct_tmp'][~sunset] = SWtoa[~sunset] * np.exp(
+            -ka[~sunset] * down_pt.p[~sunset] / (g * mu0[~sunset]))
     down_pt['SW_direct'] = down_pt.t * 0
-    down_pt['SW_direct'][~sunset] = down_pt.SW_direct_tmp[~sunset] * (
+    if ka[~sunset].size != 0:
+        down_pt['SW_direct'][~sunset] = down_pt.SW_direct_tmp[~sunset] * (
             down_pt.cos_illumination[~sunset] / mu0[~sunset]) * (1 - shade)
     down_pt['SW'] = down_pt.SW_diffuse + down_pt.SW_direct
 
@@ -380,7 +384,7 @@ def downscale_climate(project_directory,
     clear_files(output_directory / 'tmp')
 
     start_time = time.time()
-    tstep_dict = {'1H': 1, '3H': 3, '6H': 6}
+    tstep_dict = {'1H': 1, '3H': 3, '6H': 6, '1M': 732, '1MS': 732}
     n_digits = len(str(df_centroids.index.max()))
 
     # =========== Open dataset with Dask =================
@@ -454,6 +458,8 @@ def downscale_climate(project_directory,
     tu.multithread_pooling(_subset_climate_dataset, fun_param, n_threads=n_core)
     fun_param = None
     ds_plev = None
+    
+    
     ds_surf = _open_dataset_climate(flist_SURF).sel(time=tvec.values)
     ds_list = []
     for _, _ in df_centroids.iterrows():

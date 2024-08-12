@@ -250,6 +250,7 @@ def compute_horizon(dem_file, azimuth_inc=30, num_threads=None, fname='da_horizo
                       }
                       )
     te.to_netcdf(da.to_dataset(), fname=output_directory / fname)
+    print('Done computing horizons')
     return da
 
 

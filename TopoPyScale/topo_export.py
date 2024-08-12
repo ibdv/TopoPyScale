@@ -71,7 +71,6 @@ def to_netcdf(ds, fname='output.nc', variables=None, complevel=9):
 
     print(f'---> File {fname} saved')
 
-
 def to_musa(ds,
             df_pts,
             da_label,

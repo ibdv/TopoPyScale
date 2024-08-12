@@ -58,10 +58,9 @@ def scale_df(df_param,
                              columns=df_param[feature_list].columns,
                              index=df_param[feature_list].index)
     for fe in feature_list:
-        df_scaled[fe] *= features.get(fe)
-
+        if features.get(fe) != 1:
+            df_scaled[fe] *= features.get(fe)
     return df_scaled, scaler
-
 
 def inverse_scale_df(df_scaled,
                      scaler,
